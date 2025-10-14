@@ -5,7 +5,10 @@ import argparse
 from typing import Dict, Any, List
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
+from langchain_tavily import TavilySearch
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from typing_extensions import TypedDict
 from dotenv import load_dotenv
 from enhanced_logging import logger, LoggingMixin
@@ -13,6 +16,7 @@ from enhanced_logging import logger, LoggingMixin
 # Load environment variables from .env file
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
+tavily_api_key = os.getenv("TAVILY_API_KEY")
 
 class CoordinatorState(TypedDict):
     prompt: str
@@ -22,6 +26,26 @@ class CoordinatorState(TypedDict):
     final_output: str
     execution_start_time: float
     step_timings: Dict[int, float]
+
+def create_search_tool():
+    """Create and return a Tavily search tool for web search capabilities."""
+    if not tavily_api_key or tavily_api_key == "your-tavily-api-key-here":
+        logger.warning("Tavily API key not configured. Web search will be unavailable.", "COORDINATOR")
+        return None
+    
+    try:
+        search_tool = TavilySearch(
+            max_results=5,
+            search_depth="basic",
+            include_answer=True,
+            include_raw_content=False,
+            include_images=False
+        )
+        logger.info("Web search tool (Tavily) initialized successfully", "COORDINATOR")
+        return search_tool
+    except Exception as e:
+        logger.error(f"Failed to initialize Tavily search tool: {str(e)}", "COORDINATOR")
+        return None
 
 def break_down_task(state: CoordinatorState) -> CoordinatorState:
     logger.info("Starting task breakdown", "COORDINATOR")
@@ -64,7 +88,19 @@ def execute_step(state: CoordinatorState, step_idx: int) -> CoordinatorState:
     
     logger.step_start(step_idx + 1, total_steps, step)
     
+    # Create LLM instance
     llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
+    
+    # Add search tool capabilities if available
+    search_tool = create_search_tool()
+    tools = []
+    if search_tool:
+        tools = [search_tool]
+        # Bind the search tool to the LLM
+        llm = llm.bind_tools(tools)
+        logger.info(f"[Step {step_idx + 1}] Web search tool available to agent", "EXECUTOR")
+    else:
+        logger.info(f"[Step {step_idx + 1}] No web search tool available", "EXECUTOR")
     
     # Build context from previous step results
     previous_results = ""
@@ -76,33 +112,58 @@ def execute_step(state: CoordinatorState, step_idx: int) -> CoordinatorState:
         if prev_results:
             previous_results = f"\n\nPrevious step results that may be relevant:\n" + "\n".join(prev_results)
     
-    prompt = PromptTemplate(
-        input_variables=["original_task", "current_step", "step_number", "total_steps", "instruction", "previous_results"],
-        template=(
-            "ORIGINAL USER REQUEST: {original_task}\n\n"
-            "YOUR ROLE: You are executing step {step_number} of {total_steps} in a multi-step process to fulfill the above request.\n"
-            "CURRENT STEP: {current_step}\n\n"
-            "CONTEXT: This step contributes to achieving the original user's goal. Stay focused on the topic and domain of the original request. "
-            "Provide information that is directly relevant and useful for the final deliverable.\n\n"
-            "SPECIFIC INSTRUCTION: {instruction}\n"
-            "{previous_results}\n\n"
-            "Execute this instruction while keeping the original request and your role in mind. Provide a focused, relevant response:"
-        )
-    )
-    
     try:
-        formatted_prompt = prompt.format(
-            original_task=state["prompt"],
-            current_step=step,
-            step_number=step_idx + 1,
-            total_steps=len(state["steps"]),
-            instruction=step,
-            previous_results=previous_results
+        # Add tool information to the prompt
+        tool_info = ""
+        if search_tool:
+            tool_info = (
+                "AVAILABLE TOOLS: You have access to web search capabilities. Use the search tool when you need current information, "
+                "recent data, facts, statistics, or any information that requires up-to-date knowledge. The search tool can help you "
+                "find reliable, current information to complete your task effectively.\n\n"
+            )
+        
+        # Create the prompt content
+        prompt_content = (
+            f"ORIGINAL USER REQUEST: {state['prompt']}\n\n"
+            f"YOUR ROLE: You are executing step {step_idx + 1} of {total_steps} in a multi-step process to fulfill the above request.\n"
+            f"CURRENT STEP: {step}\n\n"
+            f"CONTEXT: This step contributes to achieving the original user's goal. Stay focused on the topic and domain of the original request. "
+            f"Provide information that is directly relevant and useful for the final deliverable.\n\n"
+            f"{tool_info}"
+            f"SPECIFIC INSTRUCTION: {step}\n"
+            f"{previous_results}\n\n"
+            f"Execute this instruction while keeping the original request and your role in mind. Provide a focused, relevant response:"
         )
         
-        logger.step_input(step_idx + 1, formatted_prompt)
+        logger.step_input(step_idx + 1, prompt_content)
         
-        result = llm.invoke(formatted_prompt).content
+        # Create messages for the conversation
+        messages = [HumanMessage(content=prompt_content)]
+        
+        # Get initial response from LLM
+        response = llm.invoke(messages)
+        messages.append(response)
+        
+        # Handle tool calls if present
+        if hasattr(response, 'tool_calls') and response.tool_calls and tools:
+            logger.info(f"[Step {step_idx + 1}] LLM is calling {len(response.tool_calls)} tool(s)", "EXECUTOR")
+            
+            # Create tool node to execute tools
+            tool_node = ToolNode(tools)
+            
+            # Execute tools
+            tool_response = tool_node.invoke({"messages": messages})
+            
+            # Add tool messages to conversation
+            messages.extend(tool_response["messages"])
+            
+            # Get final response from LLM after tool execution
+            final_response = llm.invoke(messages)
+            result = final_response.content
+        else:
+            # No tool calls, use the initial response
+            result = response.content
+        
         state["results"][step_idx] = result
         
         logger.step_output(step_idx + 1, result)

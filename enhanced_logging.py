@@ -31,6 +31,7 @@ class ColoredFormatter(logging.Formatter):
         'EXECUTOR': Fore.YELLOW + Style.BRIGHT,
         'SUBAGENT': Fore.CYAN,
         'CONSOLIDATION': Fore.MAGENTA + Style.BRIGHT,
+        'TOOL_USAGE': Fore.CYAN + Style.DIM,
     }
     
     def __init__(self):
@@ -128,6 +129,11 @@ class AgentLogger:
         """Log step completion."""
         message = f"✅ Step {step_num}/{total_steps} completed in {duration:.2f}s"
         self._log_with_category(logging.INFO, message, "STEP_COMPLETE")
+    
+    def tool_usage(self, step_num: int, tool_name: str, query: str):
+        """Log tool usage during step execution."""
+        message = f"🔍 [Step {step_num}] Using {tool_name}: {query[:100]}{'...' if len(query) > 100 else ''}"
+        self._log_with_category(logging.INFO, message, "TOOL_USAGE")
     
     def step_error(self, step_num: int, total_steps: int, error: str, duration: float):
         """Log step error."""
