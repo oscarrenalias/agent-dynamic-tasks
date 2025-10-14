@@ -1,5 +1,7 @@
 import os
+import sys
 import time
+import argparse
 from typing import Dict, Any, List
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
@@ -219,9 +221,81 @@ def run_coordinator(prompt: str):
     logger.print_separator("Agent Coordination Complete")
     return result
 
+def parse_arguments():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="LangGraph Task Coordinator - Break down and execute complex tasks using AI agents",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s -i prompt.txt
+  %(prog)s -i instructions.txt -o results.md
+  %(prog)s --input task.txt --output report.txt
+        """
+    )
+    
+    parser.add_argument(
+        '-i', '--input',
+        required=True,
+        type=str,
+        help='Input file containing the task instructions (required)'
+    )
+    
+    parser.add_argument(
+        '-o', '--output',
+        type=str,
+        help='Output file to write results to (optional, defaults to stdout)'
+    )
+    
+    return parser.parse_args()
+
+def read_input_file(file_path: str) -> str:
+    """Read and return the contents of the input file."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read().strip()
+            if not content:
+                logger.error(f"Input file '{file_path}' is empty", "MAIN")
+                sys.exit(1)
+            return content
+    except FileNotFoundError:
+        logger.error(f"Input file '{file_path}' not found", "MAIN")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error reading input file '{file_path}': {str(e)}", "MAIN")
+        sys.exit(1)
+
+def write_output(content: str, output_file: str = None):
+    """Write content to output file or stdout."""
+    if output_file:
+        try:
+            with open(output_file, 'w', encoding='utf-8') as file:
+                file.write(content)
+            logger.success(f"Results written to '{output_file}'", "MAIN")
+        except Exception as e:
+            logger.error(f"Error writing to output file '{output_file}': {str(e)}", "MAIN")
+            sys.exit(1)
+    else:
+        print("\n" + "="*80)
+        print("FINAL RESULTS")
+        print("="*80)
+        print(content)
+        print("="*80)
+
 if __name__ == "__main__":
-    prompt = "Write a report about the increase of measles cases in the US. Identify sources, pull the necessary data, and generate a report in markdown with the key outcomes and your analysis."
+    args = parse_arguments()
+    
+    # Read input from file
+    logger.info(f"Reading instructions from '{args.input}'", "MAIN")
+    prompt = read_input_file(args.input)
+    logger.info(f"Loaded task: {prompt[:100]}{'...' if len(prompt) > 100 else ''}", "MAIN")
+    
+    # Execute the coordination
     state = run_coordinator(prompt)
+    
+    # Write output
+    final_output = state.get("final_output", "No output generated")
+    write_output(final_output, args.output)
     
     # The final output and detailed results are already logged by the enhanced logger
     # No need for additional print statements as everything is logged in real-time
