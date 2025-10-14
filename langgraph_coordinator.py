@@ -22,8 +22,14 @@ def break_down_task(state: CoordinatorState) -> CoordinatorState:
     breakdown_prompt = PromptTemplate(
         input_variables=["task"],
         template=(
-            "You are a helpful assistant. Break down the following user request into a numbered list of actionable steps. "
-            "Only output the list.\nUser request: {task}\nList of steps:"
+            "You are a task breakdown specialist. Analyze the following user request and break it down into a numbered list of clear, actionable steps.\n\n"
+            "Each step should:\n"
+            "- Be specific and actionable\n"
+            "- Stay focused on the main topic and domain\n"
+            "- Build logically toward the final deliverable\n"
+            "- Be scoped appropriately for an AI agent to execute\n\n"
+            "User request: {task}\n\n"
+            "Numbered list of actionable steps:"
         )
     )
     steps_raw = llm.invoke(breakdown_prompt.format(task=state["prompt"])).content
@@ -35,12 +41,39 @@ def break_down_task(state: CoordinatorState) -> CoordinatorState:
 def execute_step(state: CoordinatorState, step_idx: int) -> CoordinatorState:
     llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
     step = state["steps"][step_idx]
+    
+    # Build context from previous step results
+    previous_results = ""
+    if step_idx > 0:
+        prev_results = []
+        for i in range(step_idx):
+            if i in state["results"]:
+                prev_results.append(f"Step {i+1} ({state['steps'][i]}): {state['results'][i]}")
+        if prev_results:
+            previous_results = f"\n\nPrevious step results that may be relevant:\n" + "\n".join(prev_results)
+    
     prompt = PromptTemplate(
-        input_variables=["instruction"],
-        template="Follow this instruction and provide a concise answer:\nInstruction: {instruction}"
+        input_variables=["original_task", "current_step", "step_number", "total_steps", "instruction", "previous_results"],
+        template=(
+            "ORIGINAL USER REQUEST: {original_task}\n\n"
+            "YOUR ROLE: You are executing step {step_number} of {total_steps} in a multi-step process to fulfill the above request.\n"
+            "CURRENT STEP: {current_step}\n\n"
+            "CONTEXT: This step contributes to achieving the original user's goal. Stay focused on the topic and domain of the original request. "
+            "Provide information that is directly relevant and useful for the final deliverable.\n\n"
+            "SPECIFIC INSTRUCTION: {instruction}\n"
+            "{previous_results}\n\n"
+            "Execute this instruction while keeping the original request and your role in mind. Provide a focused, relevant response:"
+        )
     )
     try:
-        result = llm.invoke(prompt.format(instruction=step)).content
+        result = llm.invoke(prompt.format(
+            original_task=state["prompt"],
+            current_step=step,
+            step_number=step_idx + 1,
+            total_steps=len(state["steps"]),
+            instruction=step,
+            previous_results=previous_results
+        )).content
         state["results"][step_idx] = result
     except Exception as e:
         state["errors"][step_idx] = str(e)
@@ -57,10 +90,17 @@ def consolidate_results(state: CoordinatorState) -> CoordinatorState:
     synth_prompt = PromptTemplate(
         input_variables=["user_request", "step_results", "step_errors"],
         template=(
-            "The user request was: {user_request}\n\n"
-            "The following steps were executed, with their results:\n{step_results}\n\n"
-            "Errors (if any):\n{step_errors}\n\n"
-            "Based on the above, produce a final, consolidated answer, report, or output that best fulfills the user's original request."
+            "ORIGINAL USER REQUEST: {user_request}\n\n"
+            "COMPLETED STEPS AND RESULTS:\n{step_results}\n\n"
+            "ERRORS (if any):\n{step_errors}\n\n"
+            "YOUR TASK: Synthesize the above step results into a comprehensive final output that directly addresses the user's original request. "
+            "Ensure the final output:\n"
+            "- Directly fulfills what the user asked for\n"
+            "- Integrates all relevant information from the step results\n"
+            "- Maintains focus on the original topic and requirements\n"
+            "- Presents information in the format requested (if specified)\n"
+            "- Provides actionable insights or conclusions where appropriate\n\n"
+            "FINAL OUTPUT:"
         )
     )
     state["final_output"] = llm.invoke(
