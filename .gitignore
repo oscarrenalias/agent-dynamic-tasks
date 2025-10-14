@@ -1,2 +1,3 @@
 .env
 __pycache__/langgraph_coordinator.cpython-313.pyc
+__pycache__/enhanced_logging.cpython-313.pyc

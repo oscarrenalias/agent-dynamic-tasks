@@ -1,10 +1,12 @@
 import os
+import time
 from typing import Dict, Any, List
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langgraph.graph import StateGraph, START, END
 from typing_extensions import TypedDict
 from dotenv import load_dotenv
+from enhanced_logging import logger, LoggingMixin
 
 # Load environment variables from .env file
 load_dotenv()
@@ -16,8 +18,13 @@ class CoordinatorState(TypedDict):
     results: Dict[int, str]
     errors: Dict[int, str]
     final_output: str
+    execution_start_time: float
+    step_timings: Dict[int, float]
 
 def break_down_task(state: CoordinatorState) -> CoordinatorState:
+    logger.info("Starting task breakdown", "COORDINATOR")
+    logger.info(f"Original request: {state['prompt'][:100]}{'...' if len(state['prompt']) > 100 else ''}")
+    
     llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
     breakdown_prompt = PromptTemplate(
         input_variables=["task"],
@@ -32,15 +39,30 @@ def break_down_task(state: CoordinatorState) -> CoordinatorState:
             "Numbered list of actionable steps:"
         )
     )
-    steps_raw = llm.invoke(breakdown_prompt.format(task=state["prompt"])).content
-    steps = [line.split(". ", 1)[-1].strip()
-             for line in steps_raw.split("\n") if line.strip() and line[0].isdigit()]
-    state["steps"] = steps
+    
+    try:
+        steps_raw = llm.invoke(breakdown_prompt.format(task=state["prompt"])).content
+        steps = [line.split(". ", 1)[-1].strip()
+                 for line in steps_raw.split("\n") if line.strip() and line[0].isdigit()]
+        state["steps"] = steps
+        
+        logger.breakdown_complete(steps)
+        logger.success(f"Task broken down into {len(steps)} steps", "COORDINATOR")
+        
+    except Exception as e:
+        logger.error(f"Failed to break down task: {str(e)}", "COORDINATOR")
+        state["steps"] = []
+    
     return state
 
 def execute_step(state: CoordinatorState, step_idx: int) -> CoordinatorState:
-    llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
+    step_start_time = time.time()
+    total_steps = len(state["steps"])
     step = state["steps"][step_idx]
+    
+    logger.step_start(step_idx + 1, total_steps, step)
+    
+    llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
     
     # Build context from previous step results
     previous_results = ""
@@ -65,21 +87,41 @@ def execute_step(state: CoordinatorState, step_idx: int) -> CoordinatorState:
             "Execute this instruction while keeping the original request and your role in mind. Provide a focused, relevant response:"
         )
     )
+    
     try:
-        result = llm.invoke(prompt.format(
+        formatted_prompt = prompt.format(
             original_task=state["prompt"],
             current_step=step,
             step_number=step_idx + 1,
             total_steps=len(state["steps"]),
             instruction=step,
             previous_results=previous_results
-        )).content
+        )
+        
+        logger.step_input(step_idx + 1, formatted_prompt)
+        
+        result = llm.invoke(formatted_prompt).content
         state["results"][step_idx] = result
+        
+        logger.step_output(step_idx + 1, result)
+        
+        duration = time.time() - step_start_time
+        state["step_timings"][step_idx] = duration
+        logger.step_complete(step_idx + 1, total_steps, duration)
+        
     except Exception as e:
-        state["errors"][step_idx] = str(e)
+        error_msg = str(e)
+        state["errors"][step_idx] = error_msg
+        
+        duration = time.time() - step_start_time
+        state["step_timings"][step_idx] = duration
+        logger.step_error(step_idx + 1, total_steps, error_msg, duration)
+    
     return state
 
 def consolidate_results(state: CoordinatorState) -> CoordinatorState:
+    logger.info("Starting result consolidation", "COORDINATOR")
+    
     llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
     results_str = "\n".join(
         [f"Step {i+1}: {state['steps'][i]}\nResult: {state['results'].get(i, '')}" for i in range(len(state['steps']))]
@@ -103,18 +145,44 @@ def consolidate_results(state: CoordinatorState) -> CoordinatorState:
             "FINAL OUTPUT:"
         )
     )
-    state["final_output"] = llm.invoke(
-        synth_prompt.format(
+    
+    try:
+        consolidation_input = synth_prompt.format(
             user_request=state["prompt"],
             step_results=results_str if results_str else "No results.",
             step_errors=errors_str if errors_str else "No errors."
         )
-    ).content
+        
+        logger.info("Sending consolidation request to LLM", "CONSOLIDATION")
+        
+        final_output = llm.invoke(consolidation_input).content
+        state["final_output"] = final_output
+        
+        logger.success("Result consolidation completed", "COORDINATOR")
+        logger.final_result(final_output)
+        
+        # Log execution summary
+        total_time = time.time() - state.get("execution_start_time", 0)
+        successful_steps = len(state["results"])
+        total_steps = len(state["steps"])
+        errors = len(state["errors"])
+        
+        logger.execution_summary(total_time, successful_steps, total_steps, errors)
+        
+    except Exception as e:
+        logger.error(f"Failed to consolidate results: {str(e)}", "COORDINATOR")
+        state["final_output"] = "Error occurred during result consolidation."
+    
     return state
 
 def execute_all_steps(state: CoordinatorState) -> CoordinatorState:
+    logger.print_separator("Step Execution Phase")
+    logger.info(f"Executing {len(state['steps'])} steps", "EXECUTOR")
+    
     for i in range(len(state["steps"])):
         state = execute_step(state, i)
+    
+    logger.print_separator("Step Execution Complete")
     return state
 
 def build_coordinator_graph():
@@ -131,25 +199,29 @@ def build_coordinator_graph():
     return graph.compile()
 
 def run_coordinator(prompt: str):
+    logger.print_separator("Agent Coordination Starting")
+    logger.info(f"Initializing coordinator for task", "MAIN")
+    
     graph = build_coordinator_graph()
     initial_state: CoordinatorState = {
         "prompt": prompt,
         "steps": [],
         "results": {},
         "errors": {},
-        "final_output": ""
+        "final_output": "",
+        "execution_start_time": time.time(),
+        "step_timings": {}
     }
+    
+    logger.info("Starting LangGraph execution", "MAIN")
     result = graph.invoke(initial_state)
+    
+    logger.print_separator("Agent Coordination Complete")
     return result
 
 if __name__ == "__main__":
     prompt = "Write a report about the increase of measles cases in the US. Identify sources, pull the necessary data, and generate a report in markdown with the key outcomes and your analysis."
     state = run_coordinator(prompt)
-    print("Final Output:\n", state["final_output"])
-    print("\nSubtasks:")
-    for i, step in enumerate(state["steps"]):
-        print(f"Step {i+1}: {step}")
-        print("Result:", state["results"].get(i, ""))
-        if i in state["errors"]:
-            print("Error:", state["errors"][i])
-        print("---")
+    
+    # The final output and detailed results are already logged by the enhanced logger
+    # No need for additional print statements as everything is logged in real-time
