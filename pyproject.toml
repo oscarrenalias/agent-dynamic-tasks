@@ -1,0 +1,22 @@
+[project]
+name = "agent-dynamic-tasks"
+version = "0.1.0"
+description = "LLM-based dynamic task coordinator agent with sub-agent execution and result aggregation"
+authors = [
+    { name="Oscar Renalias", email="oscar.renalias@accenture.com" }
+]
+requires-python = ">=3.9"
+
+[project.dependencies]
+langchain = "^0.1.0"
+openai = "^1.0.0"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.uv]
+# Default uv configuration
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
