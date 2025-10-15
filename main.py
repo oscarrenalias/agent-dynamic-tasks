@@ -18,6 +18,9 @@ load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
 
+# Model configuration
+OPENAI_MODEL = "gpt-5"
+
 class CoordinatorState(TypedDict):
     prompt: str
     steps: List[str]
@@ -51,7 +54,7 @@ def break_down_task(state: CoordinatorState) -> CoordinatorState:
     logger.info("Starting task breakdown", "COORDINATOR")
     logger.info(f"Original request: {state['prompt'][:100]}{'...' if len(state['prompt']) > 100 else ''}")
     
-    llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
+    llm = ChatOpenAI(model=OPENAI_MODEL, openai_api_key=openai_api_key)
     breakdown_prompt = PromptTemplate(
         input_variables=["task"],
         template=(
@@ -89,7 +92,7 @@ def execute_step(state: CoordinatorState, step_idx: int) -> CoordinatorState:
     logger.step_start(step_idx + 1, total_steps, step)
     
     # Create LLM instance
-    llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
+    llm = ChatOpenAI(model=OPENAI_MODEL, openai_api_key=openai_api_key)
     
     # Add search tool capabilities if available
     search_tool = create_search_tool()
@@ -185,7 +188,7 @@ def execute_step(state: CoordinatorState, step_idx: int) -> CoordinatorState:
 def consolidate_results(state: CoordinatorState) -> CoordinatorState:
     logger.info("Starting result consolidation", "COORDINATOR")
     
-    llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key)
+    llm = ChatOpenAI(model=OPENAI_MODEL, openai_api_key=openai_api_key)
     results_str = "\n".join(
         [f"Step {i+1}: {state['steps'][i]}\nResult: {state['results'].get(i, '')}" for i in range(len(state['steps']))]
     )
