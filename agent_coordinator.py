@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 import concurrent.futures
 from dotenv import load_dotenv
-from enhanced_logging import logger, LoggingMixin
+from lib.logging import logger, LoggingMixin
 
 # Load environment variables from .env file
 load_dotenv()

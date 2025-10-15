@@ -49,20 +49,22 @@ A Python project for dynamic multi-step coordination of LLM tasks using LangChai
    echo "Your task instructions here" > prompt.txt
    
    # Run with output to stdout
-   uv run python langgraph_coordinator.py -i prompt.txt
+   uv run python main.py -i prompt.txt
    
    # Run with output to file
-   uv run python langgraph_coordinator.py -i prompt.txt -o results.md
+   uv run python main.py -i prompt.txt -o results.md
    
    # View help and usage examples
-   uv run python langgraph_coordinator.py --help
+   uv run python main.py --help
    ```
 
 ## Files
 
 - `agent_coordinator.py` — Standalone agent for dynamic task execution
-- `langgraph_coordinator.py` — LangGraph workflow version with command-line interface
-- `enhanced_logging.py` — Enhanced logging system with step tracking and colored output
+- `main.py` — LangGraph workflow version with command-line interface
+- `lib/` — Python library modules
+  - `lib/logging.py` — Enhanced logging system with step tracking and colored output
+- `examples/` — Example task files for testing
 - `example_prompt.txt` — Example task file for testing the LangGraph coordinator
 - `search_test_task.txt` — Example task that demonstrates web search capabilities
 - `.env.example` — Example environment file for API keys
@@ -80,17 +82,17 @@ The agents now have **automatic web search capabilities** powered by Tavily Sear
 ### Example Search-Enhanced Tasks:
 ```bash
 echo "Analyze the latest developments in renewable energy policy in 2024" > research_task.txt
-uv run python langgraph_coordinator.py -i research_task.txt -o energy_report.md
+uv run python main.py -i research_task.txt -o energy_report.md
 ```
 
 ```bash
 echo "Write a report on recent AI breakthrough announcements from major tech companies" > ai_research.txt
-uv run python langgraph_coordinator.py -i ai_research.txt
+uv run python main.py -i ai_research.txt
 ```
 
 ## Command-Line Options (LangGraph Coordinator)
 
-The `langgraph_coordinator.py` script supports the following command-line options:
+The `main.py` script supports the following command-line options:
 
 - `-i, --input` (required): Input file containing task instructions
 - `-o, --output` (optional): Output file to write results to (defaults to stdout if not specified)
@@ -105,17 +107,17 @@ echo "Write a comprehensive analysis of renewable energy trends in 2024" > energ
 
 **Run analysis and save to markdown:**
 ```bash
-uv run python langgraph_coordinator.py -i energy_analysis.txt -o energy_report.md
+uv run python main.py -i energy_analysis.txt -o energy_report.md
 ```
 
 **View results in terminal:**
 ```bash
-uv run python langgraph_coordinator.py -i energy_analysis.txt
+uv run python main.py -i energy_analysis.txt
 ```
 
 **Test web search capabilities:**
 ```bash
-uv run python langgraph_coordinator.py -i search_test_task.txt -o ai_analysis_report.md
+uv run python main.py -i search_test_task.txt -o ai_analysis_report.md
 ```
 
 ## License
