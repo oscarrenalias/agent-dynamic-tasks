@@ -74,7 +74,7 @@ echo "Write a report on recent AI breakthrough announcements from major tech com
 uv run python main.py -i ai_research.txt
 ```
 
-## Command-Line Options (LangGraph Coordinator)
+## Command-Line Options
 
 The `main.py` script supports the following command-line options:
 
