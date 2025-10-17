@@ -1,10 +1,10 @@
 # agent-dynamic-tasks
 
-A Python project for dynamic multi-step coordination of LLM tasks using LangChain and LangGraph.
+A tool based on a coordinator agent that with dynamic multi-step tasks using LangChain and LangGraph. When provided with a task in a prompt, the coordinator agent will determine what kind of steps are required to achieve it, and will coordinate the execution of each step with task-specific agents that will carry out the tasks. The coordinator is also responsible for managing inputs and outputs via the context, and passing the context between task agents.
 
 ## Features
 
-- Breaks down complex prompts into actionable subtasks
+- Breaks down complex prompts into actionable subtasks, based on the agent's understanding of the task and its own analysis of the steps required to achieve the requested goal
 - Executes each subtask with an LLM (OpenAI)
 - **Web search capabilities** via Tavily Search API for real-time information access
 - Agents automatically decide when to use web search based on task requirements
@@ -17,13 +17,9 @@ A Python project for dynamic multi-step coordination of LLM tasks using LangChai
 ## Getting Started
 
 1. **Install dependencies**  
-   Recommended: Use [uv](https://github.com/astral-sh/uv) or pip  
+   Use [uv](https://github.com/astral-sh/uv)
    ```
-   uv pip install -r requirements.txt
-   ```
-   Or use `pyproject.toml`:
-   ```
-   uv pip install -e .
+   uv sync
    ```
 
 2. **Configure API Keys**  
@@ -38,12 +34,6 @@ A Python project for dynamic multi-step coordination of LLM tasks using LangChai
 
 3. **Run the agents**  
    
-   **Standalone Agent:**
-   ```bash
-   uv run python agent_coordinator.py
-   ```
-   
-   **LangGraph Coordinator (with command-line interface):**
    ```bash
    # Create an input file with your task instructions
    echo "Your task instructions here" > prompt.txt
@@ -53,26 +43,20 @@ A Python project for dynamic multi-step coordination of LLM tasks using LangChai
    
    # Run with output to file
    uv run python main.py -i prompt.txt -o results.md
-   
-   # View help and usage examples
-   uv run python main.py --help
    ```
 
 ## Files
 
-- `agent_coordinator.py` — Standalone agent for dynamic task execution
 - `main.py` — LangGraph workflow version with command-line interface
 - `lib/` — Python library modules
   - `lib/logging.py` — Enhanced logging system with step tracking and colored output
 - `examples/` — Example task files for testing
-- `example_prompt.txt` — Example task file for testing the LangGraph coordinator
-- `search_test_task.txt` — Example task that demonstrates web search capabilities
 - `.env.example` — Example environment file for API keys
 - `pyproject.toml` — Project dependencies
 
 ## Web Search Integration
 
-The agents now have **automatic web search capabilities** powered by Tavily Search API:
+The agents have **automatic web search capabilities** powered by Tavily Search API:
 
 - **Intelligent Usage**: Agents automatically decide when to search for current information
 - **Research Tasks**: Perfect for tasks requiring recent data, statistics, news, or fact-checking
